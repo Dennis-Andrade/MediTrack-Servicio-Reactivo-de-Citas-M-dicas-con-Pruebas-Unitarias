@@ -1,0 +1,138 @@
+MediTrack — Servicio Reactivo de Citas Médicas con Pruebas Unitarias
+Aplicar en un mismo entregable los dos conceptos centrales:
+Reactividad: exponer datos con Mono/Flux y transformarlos con operadores de
+Project Reactor, sin bloquear el hilo.
+Testing: demostrar con JUnit y StepVerifier que ese flujo hace lo correcto.
+⏱️ Alcance acotado. Todo en memoria. No se requiere base de datos, Docker,
+seguridad, Kafka ni servicios externos. Quiero que apliques bien los conceptos base,
+no la complejidad de la infraestructura.
+
+Escenario
+MediTrack gestiona las citas médicas de un centro de salud. El servicio debe
+entregar las citas de forma reactiva y descartar las inválidas antes de mostrarlas.
+
+Entidad Appointment
+Campo	Tipo	Descripción
+id	String	Identificador de la cita
+patientName	String	Nombre del paciente
+specialty	String	Especialidad (Cardiología, Pediatría, …)
+costUsd	Double	Costo de la consulta
+notifyEmails	List<String>	Correos a notificar
+Regla de negocio
+Una cita es válida si costUsd > 0 y notifyEmails no está vacía.
+Configuración base (pom.xml)
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+
+    <!-- Pruebas -->
+    <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>4.13.2</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>io.projectreactor</groupId>
+        <artifactId>reactor-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+Commit semántico: chore: inicializa proyecto MediTrack con webflux
+Actividades
+Cada actividad va en su propia rama y se cierra con un commit semántico.
+Al final se integran todas a main.
+Actividad 1 — Modelo inmutable
+Rama: feature/modelo
+
+Crea la clase Appointment 100 % inmutable:
+
+Clase final, atributos private final, sin setters.
+Copia defensiva de notifyEmails en el constructor y en el getter
+(el getter devuelve una lista de solo lectura).
+Commit: feat: agrega entidad inmutable Appointment con copias defensivas
+Actividad 2 — Servicio reactivo con operadores
+Rama: feature/servicio-reactivo
+
+Crea AppointmentService con dos métodos:
+
+1. Flux<Appointment> getValidAppointments()
+
+Genera 5 citas en memoria con Flux.just(...): 3 válidas y 2 inválidas
+(una con costUsd = 0, otra con notifyEmails vacía).
+
+Encadena, como mínimo, estos 3 operadores:
+
+Operador	Para qué
+.filter(...)	Dejar pasar solo las citas válidas
+.map(...)	Transformar cada cita (p. ej. especialidad en mayúsculas)
+.defaultIfEmpty(...)	Emitir una cita genérica si el filtro deja el flujo vacío
+2. Mono<Appointment> findById(String id)
+
+Busca la cita en el flujo y, si no existe, resuelve el caso con
+switchIfEmpty(Mono.error(...)). 
+Prohibido usar block() o un if sobre
+un valor ya bloqueado.
+Comenta en el código por qué usaste cada operador. Esa justificación la voy a tener muy en cuenta.
+Commit: feat: implementa servicio reactivo de citas con filter, map y defaultIfEmpty
+Actividad 3 — Controlador REST reactivo
+Rama: feature/api-rest
+
+Crea AppointmentController con dos endpoints:
+
+Método	Ruta	Retorno
+GET	/api/appointments	Flux<Appointment>
+GET	/api/appointments/{id}	Mono<Appointment>
+Requisito: ninguna firma pública puede devolver un tipo bloqueante
+(nada de List, Appointment "pelado" ni block()).
+Commit: feat: expone endpoints reactivos de citas
+Actividad 4 — Pruebas unitarias
+Rama: feature/pruebas
+
+Todas las pruebas usan el patrón AAA (Arrange–Act–Assert) y nombres descriptivos
+del tipo metodo_condicion_resultadoEsperado.
+
+4.1 AppointmentTest — el modelo
+Los getters devuelven lo que recibió el constructor (assertEquals).
+Copia defensiva: modifica la lista original después de crear el objeto y verifica
+con assertEquals que el tamaño interno no cambió, más assertNotSame sobre
+getNotifyEmails().
+4.2 AppointmentServiceTest — el flujo reactivo con StepVerifier
+El flujo filtrado emite exactamente 3 citas:
+expectNextCount(3).verifyComplete().
+Si todas las citas son inválidas, se emite una sola: la del defaultIfEmpty.
+findById con un id inexistente termina en error:
+.verifyError(...) o expectError(...).verify().
+@Test
+public void getValidAppointments_debeEmitirSoloLasTresValidas() {
+    // Arrange
+    AppointmentService service = new AppointmentService();
+
+    // Act
+    Flux<Appointment> flujo = service.getValidAppointments();
+
+    // Assert
+    StepVerifier.create(flujo)
+            .expectNextCount(3)
+            .verifyComplete();
+}
+Commit: test: agrega pruebas del modelo y del flujo reactivo con StepVerifier
+Cierre — Integración a main
+mvn test
+Debe mostrar Tests run: X, Failures: 0, Errors: 0 (en verde). Integra cada rama a
+main mediante merge o Pull Request.
+
+Commit: chore: integra ramas de MediTrack a main
+Recomendaciones
+Cada rama debe dejar el proyecto compilando.
+dejar las ramas como historial para su visualizacion en github.
+No agregues base de datos, seguridad ni mensajería.
+Recuerda que un Flux es lazy: si tu prueba no se suscribe (verifyComplete()),
+no está probando nada.
+Criterios obligatorios.
+Clase 100 % inmutable con copias defensivas en constructor y getter; el getter devuelve una lista de solo lectura.
+Cadena no bloqueante con filter, map y defaultIfEmpty bien aplicados, switchIfEmpty para el caso "no encontrado" y cada operador justificado con un comentario.
+Cubre el modelo (getters + assertNotSame) y el flujo con StepVerifier en los 3 casos: conteo de válidas, defaultIfEmpty y error de findById; patrón AAA y nombres descriptivos.
+Endpoints devuelven Flux/Mono; una rama por actividad, commits atómicos y semánticos (feat, test, chore), mvn test en verde y capturas de curl de ambos endpoints.
