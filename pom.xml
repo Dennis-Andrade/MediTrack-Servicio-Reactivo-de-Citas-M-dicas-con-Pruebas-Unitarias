@@ -14,7 +14,7 @@
     <artifactId>meditrack</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>MediTrack</name>
-    <description>Servicio reativo de citas medicas con pruebas unitarias</description>
+    <description>Servicio reactivo de citas medicas con pruebas unitarias</description>
 
     <properties>
         <java.version>17</java.version>
